@@ -1,0 +1,21 @@
+# 1
+tau.hat.pointwise <- predict(forest)$predictions[subset]
+
+# 2
+observation.weight <- observation_weights(forest)
+subset.weights <- observation.weight[subset]
+
+# 3
+tau.avg.raw <- weighted.mean(tau.hat.pointwise, subset.weights)
+# IATEs
+
+# 4
+gamma.control.raw <- 1/(1 - subset.W.hat[control.idx])
+gamma.treated.raw <- 1/subset.W.hat[treated.idx]
+gamma <- rep(0, length(subset.W.orig))
+gamma[control.idx] <- gamma.control.raw/sum(subset.weights[control.idx] * gamma.control.raw) * sum(subset.weights)
+gamma[treated.idx] <- gamma.treated.raw/sum(subset.weights[treated.idx] * gamma.treated.raw) * sum(subset.weights)
+dr.correction.all <- subset.W.orig * gamma * (subset.Y.orig - 
+            Y.hat.1) - (1 - subset.W.orig) * gamma * (subset.Y.orig - 
+            Y.hat.0)
+dr.correction <- weighted.mean(dr.correction.all, subset.weights)

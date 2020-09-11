@@ -1,0 +1,2 @@
+This repository contains an application of a causal forest (CF) estimation of individualized treatment effects (IATEs) and respective aggregations to group average treatment effects (GATEs) as well as overall average treatment effects (ATEs).
+Application refers to a labor market program evaluation and relies on R's grf package.

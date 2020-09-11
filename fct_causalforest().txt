@@ -1,0 +1,106 @@
+function (X, Y, W, Y.hat = NULL, W.hat = NULL, num.trees = 2000, 
+    sample.weights = NULL, clusters = NULL, equalize.cluster.weights = FALSE, 
+    sample.fraction = 0.5, mtry = min(ceiling(sqrt(ncol(X)) + 
+        20), ncol(X)), min.node.size = 5, honesty = TRUE, honesty.fraction = 0.5, 
+    honesty.prune.leaves = TRUE, alpha = 0.05, imbalance.penalty = 0, 
+    stabilize.splits = TRUE, ci.group.size = 2, tune.parameters = "none", 
+    tune.num.trees = 200, tune.num.reps = 50, tune.num.draws = 1000, 
+    compute.oob.predictions = TRUE, orthog.boosting = FALSE, 
+    num.threads = NULL, seed = runif(1, 0, .Machine$integer.max)) 
+{
+    has.missing.values <- validate_X(X, allow.na = TRUE)
+    validate_sample_weights(sample.weights, X)
+    Y <- validate_observations(Y, X)
+    W <- validate_observations(W, X)
+    clusters <- validate_clusters(clusters, X)
+    samples.per.cluster <- validate_equalize_cluster_weights(equalize.cluster.weights, 
+        clusters, sample.weights)
+    num.threads <- validate_num_threads(num.threads)
+    all.tunable.params <- c("sample.fraction", "mtry", 
+        "min.node.size", "honesty.fraction", "honesty.prune.leaves", 
+        "alpha", "imbalance.penalty")
+    args.orthog <- list(X = X, num.trees = max(50, num.trees/4), 
+        sample.weights = sample.weights, clusters = clusters, 
+        equalize.cluster.weights = equalize.cluster.weights, 
+        sample.fraction = sample.fraction, mtry = mtry, min.node.size = 5, 
+        honesty = TRUE, honesty.fraction = 0.5, honesty.prune.leaves = honesty.prune.leaves, 
+        alpha = alpha, imbalance.penalty = imbalance.penalty, 
+        ci.group.size = 1, tune.parameters = tune.parameters, 
+        num.threads = num.threads, seed = seed)
+    if (is.null(Y.hat) && !orthog.boosting) {
+        forest.Y <- do.call(regression_forest, c(Y = list(Y), 
+            args.orthog))
+        Y.hat <- predict(forest.Y)$predictions
+    }
+    else if (is.null(Y.hat) && orthog.boosting) {
+        forest.Y <- do.call(boosted_regression_forest, c(Y = list(Y), 
+            args.orthog))
+        Y.hat <- predict(forest.Y)$predictions
+    }
+    else if (length(Y.hat) == 1) {
+        Y.hat <- rep(Y.hat, nrow(X))
+    }
+    else if (length(Y.hat) != nrow(X)) {
+        stop("Y.hat has incorrect length.")
+    }
+    if (is.null(W.hat) && !orthog.boosting) {
+        forest.W <- do.call(regression_forest, c(Y = list(W), 
+            args.orthog))
+        W.hat <- predict(forest.W)$predictions
+    }
+    else if (is.null(W.hat) && orthog.boosting) {
+        forest.W <- do.call(boosted_regression_forest, c(Y = list(W), 
+            args.orthog))
+        W.hat <- predict(forest.W)$predictions
+    }
+    else if (length(W.hat) == 1) {
+        W.hat <- rep(W.hat, nrow(X))
+    }
+    else if (length(W.hat) != nrow(X)) {
+        stop("W.hat has incorrect length.")
+    }
+    Y.centered <- Y - Y.hat
+    W.centered <- W - W.hat
+    data <- create_train_matrices(X, outcome = Y.centered, treatment = W.centered, 
+        sample.weights = sample.weights)
+    args <- list(num.trees = num.trees, clusters = clusters, 
+        samples.per.cluster = samples.per.cluster, sample.fraction = sample.fraction, 
+        mtry = mtry, min.node.size = min.node.size, honesty = honesty, 
+        honesty.fraction = honesty.fraction, honesty.prune.leaves = honesty.prune.leaves, 
+        alpha = alpha, imbalance.penalty = imbalance.penalty, 
+        stabilize.splits = stabilize.splits, ci.group.size = ci.group.size, 
+        compute.oob.predictions = compute.oob.predictions, num.threads = num.threads, 
+        seed = seed, reduced.form.weight = 0)
+    tuning.output <- NULL
+    if (!identical(tune.parameters, "none")) {
+        tuning.output <- tune_causal_forest(X, Y, W, Y.hat, W.hat, 
+            sample.weights = sample.weights, clusters = clusters, 
+            equalize.cluster.weights = equalize.cluster.weights, 
+            sample.fraction = sample.fraction, mtry = mtry, min.node.size = min.node.size, 
+            honesty = honesty, honesty.fraction = honesty.fraction, 
+            honesty.prune.leaves = honesty.prune.leaves, alpha = alpha, 
+            imbalance.penalty = imbalance.penalty, stabilize.splits = stabilize.splits, 
+            ci.group.size = ci.group.size, tune.parameters = tune.parameters, 
+            tune.num.trees = tune.num.trees, tune.num.reps = tune.num.reps, 
+            tune.num.draws = tune.num.draws, num.threads = num.threads, 
+            seed = seed)
+        args <- modifyList(args, as.list(tuning.output[["params"]]))
+    }
+    forest <- do.call.rcpp(causal_train, c(data, args))
+    class(forest) <- c("causal_forest", "grf")
+    forest[["ci.group.size"]] <- ci.group.size
+    forest[["X.orig"]] <- X
+    forest[["Y.orig"]] <- Y
+    forest[["W.orig"]] <- W
+    forest[["Y.hat"]] <- Y.hat
+    forest[["W.hat"]] <- W.hat
+    forest[["clusters"]] <- clusters
+    forest[["equalize.cluster.weights"]] <- equalize.cluster.weights
+    forest[["sample.weights"]] <- sample.weights
+    forest[["tunable.params"]] <- args[all.tunable.params]
+    forest[["tuning.output"]] <- tuning.output
+    forest[["has.missing.values"]] <- has.missing.values
+    forest
+}
+<bytecode: 0x0000020bf0e15190>
+<environment: namespace:grf>
